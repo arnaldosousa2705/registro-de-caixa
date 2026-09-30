@@ -4,6 +4,7 @@ from flask_migrate import Migrate
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///loja.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -17,18 +18,97 @@ BRAZIL_TIMEZONE = ZoneInfo('America/Sao_Paulo')
 def brazil_now():
     return datetime.now(BRAZIL_TIMEZONE).replace(tzinfo=None)
 
+class DailyRegister(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, unique=True, nullable=False)
+    opened_at = db.Column(db.DateTime, default=brazil_now, nullable=False)
+    closed_at = db.Column(db.DateTime, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='aberto')  # 'open' or 'closed'
 
 class Sale(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.DateTime, default=brazil_now, nullable=False)
     amount = db.Column(db.Float, nullable=False)
-    payment_method = db.Column(db.String(20), nullable=False) 
+    payment_method = db.Column(db.String(20), nullable=False)
+    daily_register_id = db.Column(db.Integer, db.ForeignKey('daily_register.id', name='fk_sale_daily_register'), nullable=True)
+    daily_register = db.relationship('DailyRegister', backref='sales')
 
 class Withdrawal(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.DateTime, default=brazil_now, nullable=False)
     amount = db.Column(db.Float, nullable=False)
     reason = db.Column(db.String(200), nullable=False)
+    daily_register_id = db.Column(
+        db.Integer, db.ForeignKey('daily_register.id', name='fk_withdrawal_daily_register'), nullable=True)
+    daily_register = db.relationship('DailyRegister', backref='withdrawals')
+
+@app.route('/daily/open', methods=['POST'])
+def open_daily():
+    # 1. Verificar se já existe caixa aberto
+    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
+    if caixa_aberto:
+        return jsonify({"error": "Já existe um caixa aberto."}), 400
+
+    # 2. Criar um novo DailyRegister
+    novo_caixa = DailyRegister(date=brazil_now().date())
+    db.session.add(novo_caixa)
+    db.session.flush()   # ← dá ID ao objeto sem commitar ainda
+
+    # 3. Adotar vendas pendentes
+    vendas_pendentes = Sale.query.filter(Sale.daily_register_id == None).all()
+    for venda in vendas_pendentes:
+        venda.daily_register_id = novo_caixa.id
+
+    # 4. Adotar retiradas pendentes
+    retiradas_pendentes = Withdrawal.query.filter(Withdrawal.daily_register_id == None).all()
+    for retirada in retiradas_pendentes:
+        retirada.daily_register_id = novo_caixa.id
+
+    # 5. Commit e retornar
+    db.session.commit()
+    return jsonify({
+        "id": novo_caixa.id,
+        "date": novo_caixa.date.strftime('%d-%m-%Y'),
+        "opened_at": novo_caixa.opened_at.strftime('%d-%m-%Y %H:%M:%S'),
+        "status": novo_caixa.status,
+        "adopted_sales": len(vendas_pendentes),
+        "adopted_withdrawals": len(retiradas_pendentes)
+    }), 201
+
+@app.route('/daily/close', methods=['POST'])
+def close_daily():
+    # 1. Buscar caixa aberto
+    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
+    if not caixa_aberto:
+        return jsonify({"error": "Não existe caixa aberto."}), 400
+
+    # 2. Atualizar status e closed_at
+    caixa_aberto.status = 'fechado'
+    caixa_aberto.closed_at = brazil_now()
+
+    # 3. Buscar vendas e retiradas vinculadas a este caixa
+    vendas = Sale.query.filter_by(daily_register_id=caixa_aberto.id).all()
+    retiradas = Withdrawal.query.filter_by(daily_register_id=caixa_aberto.id).all()
+
+    # 4. Calcular totais
+    total_vendas = sum(v.amount for v in vendas)
+    total_retiradas = sum(r.amount for r in retiradas)
+    liquido = total_vendas - total_retiradas
+
+    # 5. Commit único
+    db.session.commit()
+
+    # 6. Retornar resumo
+    return jsonify({
+        "id": caixa_aberto.id,
+        "date": caixa_aberto.date.strftime('%d-%m-%Y'),
+        "opened_at": caixa_aberto.opened_at.strftime('%d-%m-%Y %H:%M:%S'),
+        "closed_at": caixa_aberto.closed_at.strftime('%d-%m-%Y %H:%M:%S'),
+        "status": caixa_aberto.status,
+        "total_sales": total_vendas,
+        "total_withdrawals": total_retiradas,
+        "net_total": liquido
+    }), 200
 
 @app.route('/sales', methods=['GET'])
 def get_sales():
@@ -78,7 +158,7 @@ def get_sales():
 
 @app.route('/sales', methods=['POST'])
 def create_sale():
-
+    
     data = request.get_json()
     if data is None:
         return jsonify({"error": "Nenhum dado enviado."}), 400
@@ -89,8 +169,13 @@ def create_sale():
     amount = data.get('amount')
     if amount is None or not isinstance(amount, (int, float)) or amount <= 0:
         return jsonify({"error": "Valor inválido. Deve ser um número maior que zero."}), 400
-
-    new_sale = Sale(amount=amount, payment_method=data.get('payment_method'))
+    
+    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
+    new_sale = Sale(
+        amount=amount,
+        payment_method=data.get('payment_method'),
+        daily_register_id=caixa_aberto.id if caixa_aberto else None
+    )
     db.session.add(new_sale)
     db.session.commit()
 
@@ -102,7 +187,7 @@ def create_sale():
     }), 201
 
 @app.route('/withdrawals', methods=['POST'])
-def create_withdrawals():
+def create_withdrawal():
 
     data = request.get_json()
     if data is None:
@@ -113,7 +198,12 @@ def create_withdrawals():
     reason = data.get('reason')
     if not reason or not isinstance(reason, str) or not reason.strip() or len(reason) > 200:
         return jsonify({"error": "Motivo inválido."}), 400
-    new_withdrawal = Withdrawal(amount=amount, reason=reason.strip())
+    
+    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
+    new_withdrawal = Withdrawal(
+        amount=amount,
+        reason=reason.strip(),
+        daily_register_id=caixa_aberto.id if caixa_aberto else None)
     db.session.add(new_withdrawal)
     db.session.commit()
 
