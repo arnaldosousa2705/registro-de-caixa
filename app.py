@@ -24,6 +24,12 @@ class Sale(db.Model):
     amount = db.Column(db.Float, nullable=False)
     payment_method = db.Column(db.String(20), nullable=False) 
 
+class Withdrawal(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.DateTime, default=brazil_now, nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    reason = db.Column(db.String(200), nullable=False)
+
 @app.route('/sales', methods=['GET'])
 def get_sales():
     requested_date = request.args.get('date')
@@ -45,6 +51,12 @@ def get_sales():
         Sale.date < end
     ).order_by(Sale.id.desc()).all()
 
+    withdrawals = Withdrawal.query.filter(Withdrawal.date >= start, Withdrawal.date < end ).order_by(Withdrawal.id.desc()).all() 
+
+    total_sales = sum(sale.amount for sale in sales)
+    total_withdrawals = sum(withdrawal.amount for withdrawal in withdrawals)
+    net_total = total_sales - total_withdrawals
+
     return jsonify({
         "date": target_date.strftime('%d-%m-%Y'),
         "sales": [{
@@ -53,7 +65,15 @@ def get_sales():
             "amount": sale.amount,
             "payment_method": sale.payment_method
         } for sale in sales],
-        "total": sum(sale.amount for sale in sales)
+        "total_sales": total_sales,
+        "withdrawals": [{
+            "id": withdrawal.id,
+            "date": withdrawal.date.strftime('%d-%m-%Y %H:%M:%S'),
+            "amount": withdrawal.amount,
+            "reason": withdrawal.reason
+        } for withdrawal in withdrawals],
+        "total_withdrawals": total_withdrawals,
+        "net_total": net_total
     }), 200
 
 @app.route('/sales', methods=['POST'])
@@ -63,8 +83,8 @@ def create_sale():
     if data is None:
         return jsonify({"error": "Nenhum dado enviado."}), 400
     
-    if data.get('payment_method') not in ['debito', 'credito', 'pix']:
-        return jsonify({"error": "Forma de pagamento inválida. Use 'debito', 'credito' ou 'pix'."}), 400
+    if data.get('payment_method') not in ['debito', 'credito', 'pix', "dinheiro"]:
+        return jsonify({"error": "Forma de pagamento inválida. Use 'debito', 'credito','pix' ou 'dinheiro'."}), 400
     
     amount = data.get('amount')
     if amount is None or not isinstance(amount, (int, float)) or amount <= 0:
@@ -79,6 +99,29 @@ def create_sale():
          "date": new_sale.date.strftime('%d-%m-%Y %H:%M:%S'),
        "amount": new_sale.amount,
        "payment_method": new_sale.payment_method
+    }), 201
+
+@app.route('/withdrawals', methods=['POST'])
+def create_withdrawals():
+
+    data = request.get_json()
+    if data is None:
+        return jsonify({"error": "Nenhum dado enviado."}), 400
+    amount = data.get('amount')
+    if amount is None or not isinstance(amount, (int, float)) or amount <= 0:
+        return jsonify({"error": "Valor inválido. Deve ser um número maior que zero."}),400
+    reason = data.get('reason')
+    if not reason or not isinstance(reason, str) or not reason.strip() or len(reason) > 200:
+        return jsonify({"error": "Motivo inválido."}), 400
+    new_withdrawal = Withdrawal(amount=amount, reason=reason.strip())
+    db.session.add(new_withdrawal)
+    db.session.commit()
+
+    return jsonify({
+        "id": new_withdrawal.id,
+        "date": new_withdrawal.date.strftime('%d-%m-%Y %H:%M:%S'),
+        "amount": new_withdrawal.amount,
+        "reason": new_withdrawal.reason
     }), 201
 
 if __name__ == '__main__':
