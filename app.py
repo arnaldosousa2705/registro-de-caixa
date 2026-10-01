@@ -110,6 +110,18 @@ def close_daily():
         "net_total": liquido
     }), 200
 
+@app.route('/daily/status', methods=['GET'])
+def daily_status():
+    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
+    if not caixa_aberto:
+        return jsonify({"status": "fechado", "message": "Nenhum caixa aberto no momento."}), 200
+    return jsonify({
+        "id": caixa_aberto.id,
+        "date": caixa_aberto.date.strftime('%d-%m-%Y'),
+        "opened_at": caixa_aberto.opened_at.strftime('%d-%m-%Y %H:%M:%S'),
+        "status": caixa_aberto.status
+    }), 200
+
 @app.route('/sales', methods=['GET'])
 def get_sales():
     requested_date = request.args.get('date')
