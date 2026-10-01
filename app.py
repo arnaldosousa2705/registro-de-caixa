@@ -113,25 +113,31 @@ def close_daily():
 @app.route('/sales', methods=['GET'])
 def get_sales():
     requested_date = request.args.get('date')
-    try:
-        target_date = (
-            datetime.strptime(requested_date, '%Y-%m-%d').date()
-            if requested_date
-            else brazil_now().date()
-        )
-        if requested_date and target_date.isoformat() != requested_date:
-            raise ValueError
-    except ValueError:
-        return jsonify({"error": "Data inválida. Use o formato YYYY-MM-DD."}), 400
+    requested_register_id = request.args.get('daily_register_id')
 
-    start = datetime.combine(target_date, datetime.min.time())
-    end = start + timedelta(days=1)
-    sales = Sale.query.filter(
-        Sale.date >= start,
-        Sale.date < end
-    ).order_by(Sale.id.desc()).all()
+    if requested_register_id:
+        caixa = DailyRegister.query.get(requested_register_id)
+        if not caixa:
+            return jsonify({"error": "Caixa não encontrado."}), 404
+        target_date = caixa.date
+        sales = Sale.query.filter_by(daily_register_id=requested_register_id).order_by(Sale.id.desc()).all()
+        withdrawals = Withdrawal.query.filter_by(daily_register_id=requested_register_id).order_by(Withdrawal.id.desc()).all()
+    else:                                   
+        try:                                 
+            target_date = (
+                datetime.strptime(requested_date, '%Y-%m-%d').date()
+                if requested_date
+                else brazil_now().date()
+            )
+            if requested_date and target_date.isoformat() != requested_date:
+                raise ValueError
+        except ValueError:
+            return jsonify({"error": "Data inválida. Use o formato YYYY-MM-DD."}), 400
 
-    withdrawals = Withdrawal.query.filter(Withdrawal.date >= start, Withdrawal.date < end ).order_by(Withdrawal.id.desc()).all() 
+        start = datetime.combine(target_date, datetime.min.time())
+        end = start + timedelta(days=1)
+        sales = Sale.query.filter(Sale.date >= start, Sale.date < end).order_by(Sale.id.desc()).all()
+        withdrawals = Withdrawal.query.filter(Withdrawal.date >= start, Withdrawal.date < end).order_by(Withdrawal.id.desc()).all()
 
     total_sales = sum(sale.amount for sale in sales)
     total_withdrawals = sum(withdrawal.amount for withdrawal in withdrawals)
