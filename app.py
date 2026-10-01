@@ -1,9 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-
+from sqlalchemy import func
+from datetime import datetime, timedelta, date
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///loja.db'
@@ -122,20 +122,139 @@ def daily_status():
         "status": caixa_aberto.status
     }), 200
 
+@app.route('/reports/monthly', methods=['GET'])
+def report_monthly():
+    # 1. Ler e validar os parâmetros
+    year = request.args.get('year')
+    month = request.args.get('month')
+    try:
+        year = int(year) if year else brazil_now().year
+        month = int(month) if month else brazil_now().month
+        if not (1 <= month <= 12):
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"error": "Ano e mês inválidos. Use ?year=2026&month=9"}), 400
+
+    # 2. Calcular início e fim do mês
+    start = date(year, month, 1)
+    if month == 12:
+        end = date(year + 1, 1, 1)
+    else:
+        end = date(year, month + 1, 1)
+
+    # 3. Soma das vendas (JOIN com DailyRegister)
+    total_sales = db.session.query(func.sum(Sale.amount)).join(
+        DailyRegister, Sale.daily_register_id == DailyRegister.id
+    ).filter(
+        DailyRegister.date >= start,
+        DailyRegister.date < end
+    ).scalar() or 0
+
+    # 4. Soma das retiradas (JOIN com DailyRegister)
+    total_withdrawals = db.session.query(func.sum(Withdrawal.amount)).join(
+        DailyRegister, Withdrawal.daily_register_id == DailyRegister.id
+    ).filter(
+        DailyRegister.date >= start,
+        DailyRegister.date < end
+    ).scalar() or 0
+
+    # 5. Retornar
+    return jsonify({
+        "year": year,
+        "month": month,
+        "total_sales": total_sales,
+        "total_withdrawals": total_withdrawals,
+        "net_total": total_sales - total_withdrawals
+    }), 200
+
+
+@app.route('/reports/yearly', methods=['GET'])
+def report_yearly():
+    # 1. Ler e validar o ano
+    year = request.args.get('year')
+    try:
+        year = int(year) if year else brazil_now().year
+    except (ValueError, TypeError):
+        return jsonify({"error": "Ano inválido. Use ?year=2026"}), 400
+
+    # 2. Início e fim do ano
+    start = date(year, 1, 1)
+    end = date(year + 1, 1, 1)
+
+    # 3. Soma das vendas
+    total_sales = db.session.query(func.sum(Sale.amount)).join(
+        DailyRegister, Sale.daily_register_id == DailyRegister.id
+    ).filter(
+        DailyRegister.date >= start,
+        DailyRegister.date < end
+    ).scalar() or 0
+
+    # 4. Soma das retiradas
+    total_withdrawals = db.session.query(func.sum(Withdrawal.amount)).join(
+        DailyRegister, Withdrawal.daily_register_id == DailyRegister.id
+    ).filter(
+        DailyRegister.date >= start,
+        DailyRegister.date < end
+    ).scalar() or 0
+
+    # 5. Retornar
+    return jsonify({
+        "year": year,
+        "total_sales": total_sales,
+        "total_withdrawals": total_withdrawals,
+        "net_total": total_sales - total_withdrawals
+    }), 200
+
+@app.route('/sales', methods=['POST'])
+def create_sale():
+
+    data = request.get_json()
+    if data is None:
+        return jsonify({"error": "Nenhum dado enviado."}), 400
+
+    if data.get('payment_method') not in ['debito', 'credito', 'pix', 'dinheiro']:
+        return jsonify({"error": "Forma de pagamento inválida. Use 'debito', 'credito', 'pix' ou 'dinheiro'."}), 400
+
+    amount = data.get('amount')
+    if amount is None or not isinstance(amount, (int, float)) or amount <= 0:
+        return jsonify({"error": "Valor inválido. Deve ser um número maior que zero."}), 400
+
+    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
+    new_sale = Sale(
+        amount=amount,
+        payment_method=data.get('payment_method'),
+        daily_register_id=caixa_aberto.id if caixa_aberto else None
+    )
+    db.session.add(new_sale)
+    db.session.commit()
+
+    return jsonify({
+        "id": new_sale.id,
+        "date": new_sale.date.strftime('%d-%m-%Y %H:%M:%S'),
+        "amount": new_sale.amount,
+        "payment_method": new_sale.payment_method
+    }), 201
+
 @app.route('/sales', methods=['GET'])
 def get_sales():
     requested_date = request.args.get('date')
     requested_register_id = request.args.get('daily_register_id')
 
     if requested_register_id:
+        try:
+            requested_register_id = int(requested_register_id)
+        except (ValueError, TypeError):
+            return jsonify({"error": "ID do caixa inválido."}), 400
+
         caixa = DailyRegister.query.get(requested_register_id)
         if not caixa:
             return jsonify({"error": "Caixa não encontrado."}), 404
+
         target_date = caixa.date
         sales = Sale.query.filter_by(daily_register_id=requested_register_id).order_by(Sale.id.desc()).all()
         withdrawals = Withdrawal.query.filter_by(daily_register_id=requested_register_id).order_by(Withdrawal.id.desc()).all()
-    else:                                   
-        try:                                 
+    else:
+        try:
             target_date = (
                 datetime.strptime(requested_date, '%Y-%m-%d').date()
                 if requested_date
@@ -173,36 +292,6 @@ def get_sales():
         "total_withdrawals": total_withdrawals,
         "net_total": net_total
     }), 200
-
-@app.route('/sales', methods=['POST'])
-def create_sale():
-    
-    data = request.get_json()
-    if data is None:
-        return jsonify({"error": "Nenhum dado enviado."}), 400
-    
-    if data.get('payment_method') not in ['debito', 'credito', 'pix', "dinheiro"]:
-        return jsonify({"error": "Forma de pagamento inválida. Use 'debito', 'credito','pix' ou 'dinheiro'."}), 400
-    
-    amount = data.get('amount')
-    if amount is None or not isinstance(amount, (int, float)) or amount <= 0:
-        return jsonify({"error": "Valor inválido. Deve ser um número maior que zero."}), 400
-    
-    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
-    new_sale = Sale(
-        amount=amount,
-        payment_method=data.get('payment_method'),
-        daily_register_id=caixa_aberto.id if caixa_aberto else None
-    )
-    db.session.add(new_sale)
-    db.session.commit()
-
-    return jsonify({
-       "id": new_sale.id,
-         "date": new_sale.date.strftime('%d-%m-%Y %H:%M:%S'),
-       "amount": new_sale.amount,
-       "payment_method": new_sale.payment_method
-    }), 201
 
 @app.route('/withdrawals', methods=['POST'])
 def create_withdrawal():
