@@ -4,8 +4,10 @@ from flask_migrate import Migrate
 from zoneinfo import ZoneInfo
 from sqlalchemy import func
 from datetime import datetime, timedelta, date
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///loja.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
