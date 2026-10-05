@@ -342,5 +342,85 @@ def create_withdrawal():
         "reason": new_withdrawal.reason
     }), 201
 
+@app.route('/sales/<int:sale_id>', methods=['PUT'])
+def update_sale(sale_id):
+    venda = Sale.query.get(sale_id)
+    if not venda:
+        return jsonify({"error": "Venda não encontrada."}), 404
+
+    data = request.get_json()
+    if data is None:
+        return jsonify({"error": "Nenhum dado enviado."}), 400
+
+    amount = data.get('amount')
+    if amount is None or not isinstance(amount, (int, float)) or amount <= 0:
+        return jsonify({"error": "Valor inválido. Deve ser um número maior que zero."}), 400
+
+    payment_method = data.get('payment_method')
+    if payment_method not in ['debito', 'credito', 'pix', 'dinheiro']:
+        return jsonify({"error": "Forma de pagamento inválida. Use 'debito', 'credito', 'pix' ou 'dinheiro'."}), 400
+
+    venda.amount = amount
+    venda.payment_method = payment_method
+    db.session.commit()
+
+    return jsonify({
+        "id": venda.id,
+        "date": venda.date.strftime('%d-%m-%Y %H:%M:%S'),
+        "amount": venda.amount,
+        "payment_method": venda.payment_method
+    }), 200
+
+@app.route('/sales/<int:sale_id>', methods=['DELETE'])
+def delete_sale(sale_id):
+    venda = Sale.query.get(sale_id)
+    if not venda:
+        return jsonify({"error": "Venda não encontrada."}), 404
+
+    db.session.delete(venda)
+    db.session.commit()
+
+    return jsonify({"message": "Venda deletada com sucesso."}), 200
+
+@app.route('/withdrawals/<int:withdrawal_id>', methods=['PUT'])
+def update_withdrawal(withdrawal_id):
+    retirada = Withdrawal.query.get(withdrawal_id)
+    if not retirada:
+        return jsonify({"error": "Retirada não encontrada."}), 404
+
+    data = request.get_json()
+    if data is None:
+        return jsonify({"error": "Nenhum dado enviado."}), 400
+
+    amount = data.get('amount')
+    if amount is None or not isinstance(amount, (int, float)) or amount <= 0:
+        return jsonify({"error": "Valor inválido. Deve ser um número maior que zero."}), 400
+
+    reason = data.get('reason')
+    if not reason or not isinstance(reason, str) or not reason.strip() or len(reason) > 200:
+        return jsonify({"error": "Motivo inválido."}), 400
+
+    retirada.amount = amount
+    retirada.reason = reason.strip()
+    db.session.commit()
+
+    return jsonify({
+        "id": retirada.id,
+        "date": retirada.date.strftime('%d-%m-%Y %H:%M:%S'),
+        "amount": retirada.amount,
+        "reason": retirada.reason
+    }), 200
+
+@app.route('/withdrawals/<int:withdrawal_id>', methods=['DELETE'])
+def delete_withdrawal(withdrawal_id):
+    retirada = Withdrawal.query.get(withdrawal_id)
+    if not retirada:
+        return jsonify({"error": "Retirada não encontrada."}), 404
+
+    db.session.delete(retirada)
+    db.session.commit()
+
+    return jsonify({"message": "Retirada deletada com sucesso."}), 200
+
 if __name__ == '__main__':
     app.run(debug=True)
