@@ -22,7 +22,7 @@ def brazil_now():
 
 class DailyRegister(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.Date, unique=True, nullable=False)
+    date = db.Column(db.Date, nullable=False)
     opened_at = db.Column(db.DateTime, default=brazil_now, nullable=False)
     closed_at = db.Column(db.DateTime, nullable=True)
     status = db.Column(db.String(20), nullable=False, default='aberto')  # 'open' or 'closed'
@@ -47,7 +47,10 @@ class Withdrawal(db.Model):
 @app.route('/daily/open', methods=['POST'])
 def open_daily():
     # 1. Verificar se já existe caixa aberto
-    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
+    caixa_aberto = DailyRegister.query.filter_by(
+        status='aberto',
+        date=brazil_now().date()
+    ).first()
     if caixa_aberto:
         return jsonify({"error": "Já existe um caixa aberto."}), 400
 
@@ -80,7 +83,10 @@ def open_daily():
 @app.route('/daily/close', methods=['POST'])
 def close_daily():
     # 1. Buscar caixa aberto
-    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
+    caixa_aberto = DailyRegister.query.filter_by (
+        status='aberto',
+        date=brazil_now().date()
+    ).first()
     if not caixa_aberto:
         return jsonify({"error": "Não existe caixa aberto."}), 400
 
@@ -114,7 +120,10 @@ def close_daily():
 
 @app.route('/daily/status', methods=['GET'])
 def daily_status():
-    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
+    caixa_aberto = DailyRegister.query.filter_by(
+        status='aberto',
+        date=brazil_now().date()
+    ).first()
     if not caixa_aberto:
         return jsonify({"status": "fechado", "message": "Nenhum caixa aberto no momento."}), 200
     return jsonify({
@@ -221,7 +230,10 @@ def create_sale():
     if amount is None or not isinstance(amount, (int, float)) or amount <= 0:
         return jsonify({"error": "Valor inválido. Deve ser um número maior que zero."}), 400
 
-    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
+    caixa_aberto = DailyRegister.query.filter_by(
+        status='aberto',
+        date=brazil_now().date()
+    ).first()
     new_sale = Sale(
         amount=amount,
         payment_method=data.get('payment_method'),
@@ -267,10 +279,13 @@ def get_sales():
         except ValueError:
             return jsonify({"error": "Data inválida. Use o formato YYYY-MM-DD."}), 400
 
-        start = datetime.combine(target_date, datetime.min.time())
-        end = start + timedelta(days=1)
-        sales = Sale.query.filter(Sale.date >= start, Sale.date < end).order_by(Sale.id.desc()).all()
-        withdrawals = Withdrawal.query.filter(Withdrawal.date >= start, Withdrawal.date < end).order_by(Withdrawal.id.desc()).all()
+        # Busca todos os caixas do dia (pode ter mais de um)
+        caixas_do_dia = DailyRegister.query.filter_by(date=target_date).all()
+        ids_caixas = [c.id for c in caixas_do_dia]
+
+        # Busca vendas e retiradas vinculadas a qualquer um desses caixas
+        sales = Sale.query.filter(Sale.daily_register_id.in_(ids_caixas)).order_by(Sale.id.desc()).all()
+        withdrawals = Withdrawal.query.filter(Withdrawal.daily_register_id.in_(ids_caixas)).order_by(Withdrawal.id.desc()).all()
 
     total_sales = sum(sale.amount for sale in sales)
     total_withdrawals = sum(withdrawal.amount for withdrawal in withdrawals)
@@ -308,7 +323,11 @@ def create_withdrawal():
     if not reason or not isinstance(reason, str) or not reason.strip() or len(reason) > 200:
         return jsonify({"error": "Motivo inválido."}), 400
     
-    caixa_aberto = DailyRegister.query.filter_by(status='aberto').first()
+    caixa_aberto = DailyRegister.query.filter_by(
+        status='aberto',
+        date=brazil_now().date()
+    ).first()
+    
     new_withdrawal = Withdrawal(
         amount=amount,
         reason=reason.strip(),
