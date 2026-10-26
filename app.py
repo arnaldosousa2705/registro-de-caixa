@@ -216,6 +216,46 @@ def report_yearly():
         "net_total": total_sales - total_withdrawals
     }), 200
 
+@app.route('/reports/daily', methods=['GET'])
+def report_daily():
+    # 1. Ler e validar a data
+    requested_date = request.args.get('date')
+    try:
+        target_date = (
+            datetime.strptime(requested_date, '%Y-%m-%d').date()
+            if requested_date
+            else brazil_now().date()
+        )
+        if requested_date and target_date.isoformat() != requested_date:
+            raise ValueError
+    except ValueError:
+        return jsonify({"error": "Data inválida. Use o formato YYYY-MM-DD."}), 400
+
+    caixas_do_dia = DailyRegister.query.filter_by(date=target_date).order_by(DailyRegister.opened_at).all()
+    
+    registers = []
+    for caixa in caixas_do_dia:
+        vendas = Sale.query.filter_by(daily_register_id=caixa.id).all()
+        retiradas = Withdrawal.query.filter_by(daily_register_id=caixa.id).all()
+        total_vendas = sum(v.amount for v in vendas)
+        total_retiradas = sum(r.amount for r in retiradas)
+        liquido = total_vendas - total_retiradas
+
+        registers.append({
+            "id": caixa.id,
+            "opened_at": caixa.opened_at.strftime('%d-%m-%Y %H:%M:%S'),
+            "closed_at": caixa.closed_at.strftime('%d-%m-%Y %H:%M:%S') if caixa.closed_at else None,
+            "status": caixa.status,
+            "total_sales": total_vendas,
+            "total_withdrawals": total_retiradas,
+            "net_total": liquido
+        })
+
+    return jsonify({
+        "date": target_date.strftime('%d-%m-%Y'),
+        "registers": registers
+    }), 200
+
 @app.route('/sales', methods=['POST'])
 def create_sale():
 
