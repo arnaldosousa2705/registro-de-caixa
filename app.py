@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func
 from datetime import datetime, timedelta, date
 from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 CORS(app)
@@ -44,6 +45,11 @@ class Withdrawal(db.Model):
         db.Integer, db.ForeignKey('daily_register.id', name='fk_withdrawal_daily_register'), nullable=True)
     daily_register = db.relationship('DailyRegister', backref='withdrawals')
 
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='funcionario')  # 'admin' or 'funcionario'
 @app.route('/daily/open', methods=['POST'])
 def open_daily():
     # 1. Verificar se já existe caixa aberto
