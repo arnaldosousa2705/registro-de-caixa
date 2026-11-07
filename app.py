@@ -6,7 +6,7 @@ from sqlalchemy import func
 from datetime import datetime, timedelta, date
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-
+import click
 app = Flask(__name__)
 CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///loja.db'
@@ -483,6 +483,20 @@ def delete_withdrawal(withdrawal_id):
     db.session.commit()
 
     return jsonify({"message": "Retirada deletada com sucesso."}), 200
+
+@app.cli.command("create-admin")
+@click.argument("email")
+@click.argument("password")
+def create_admin(email, password):
+    if User.query.filter_by(email=email).first():
+        print(f"Usuário com email {email} já existe.")
+        return
+
+    hashed_password = generate_password_hash(password)
+    new_admin = User(email=email, password_hash=hashed_password, role='admin')
+    db.session.add(new_admin)
+    db.session.commit()
+    print(f"Administrador criado com sucesso: {email}")
 
 if __name__ == '__main__':
     app.run(debug=True)
