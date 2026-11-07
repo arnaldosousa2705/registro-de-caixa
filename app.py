@@ -140,6 +140,8 @@ def report_monthly():
     month = request.args.get('month')
     try:
         year = int(year) if year else brazil_now().year
+        if not (2000 <= year <= 2100):
+            raise ValueError
         month = int(month) if month else brazil_now().month
         if not (1 <= month <= 12):
             raise ValueError
@@ -185,6 +187,8 @@ def report_yearly():
     year = request.args.get('year')
     try:
         year = int(year) if year else brazil_now().year
+        if not (2000 <= year <= 2100):
+            raise ValueError
     except (ValueError, TypeError):
         return jsonify({"error": "Ano inválido. Use ?year=2026"}), 400
 
