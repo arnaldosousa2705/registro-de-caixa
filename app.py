@@ -7,10 +7,14 @@ from datetime import datetime, timedelta, date
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import click
+from flask_jwt_extended import JWTManager, create_access_token
+
 app = Flask(__name__)
 CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///loja.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['JWT_SECRET_KEY'] = 'troque-isto-depois'
+jwt = JWTManager(app)
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
@@ -50,6 +54,28 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), nullable=False, default='funcionario')  # 'admin' or 'funcionario'
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    if data is None:
+        return jsonify({"error": "Nenhum dado enviado."}), 400
+
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({"error": "Email e senha são obrigatórios."}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if user and check_password_hash(user.password_hash, password):
+        token = create_access_token(
+            identity=str(user.id),
+            additional_claims={"role": user.role}
+        )
+        return jsonify({"token": token, "role": user.role}), 200
+    return jsonify({"error": "Email ou senha inválidos."}), 401
+
 @app.route('/daily/open', methods=['POST'])
 def open_daily():
     # 1. Verificar se já existe caixa aberto
