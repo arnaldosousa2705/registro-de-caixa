@@ -388,6 +388,9 @@ def update_sale(sale_id):
     if not venda:
         return jsonify({"error": "Venda não encontrada."}), 404
 
+    if venda.daily_register and venda.daily_register.status == 'fechado':
+        return jsonify({"error": "Não é possível alterar uma venda de um caixa fechado."}), 400
+
     data = request.get_json()
     if data is None:
         return jsonify({"error": "Nenhum dado enviado."}), 400
@@ -417,6 +420,9 @@ def delete_sale(sale_id):
     if not venda:
         return jsonify({"error": "Venda não encontrada."}), 404
 
+    if venda.daily_register and venda.daily_register.status == 'fechado':
+        return jsonify({"error": "Não é possível deletar uma venda de um caixa fechado."}), 400
+
     db.session.delete(venda)
     db.session.commit()
 
@@ -427,6 +433,9 @@ def update_withdrawal(withdrawal_id):
     retirada = Withdrawal.query.get(withdrawal_id)
     if not retirada:
         return jsonify({"error": "Retirada não encontrada."}), 404
+
+    if retirada.daily_register and retirada.daily_register.status == 'fechado':
+        return jsonify({"error": "Não é possível alterar uma retirada de um caixa fechado."}), 400
 
     data = request.get_json()
     if data is None:
@@ -456,6 +465,9 @@ def delete_withdrawal(withdrawal_id):
     retirada = Withdrawal.query.get(withdrawal_id)
     if not retirada:
         return jsonify({"error": "Retirada não encontrada."}), 404
+
+    if retirada.daily_register and retirada.daily_register.status == 'fechado':
+        return jsonify({"error": "Não é possível deletar uma retirada de um caixa fechado."}), 400
 
     db.session.delete(retirada)
     db.session.commit()
