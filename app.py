@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, date
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import click
-from flask_jwt_extended import JWTManager, create_access_token
+from functools import wraps
+from flask_jwt_extended import JWTManager, create_access_token, verify_jwt_in_request, get_jwt
 
 app = Flask(__name__)
 CORS(app)
@@ -54,6 +55,16 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), nullable=False, default='funcionario')  # 'admin' or 'funcionario'
+
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        verify_jwt_in_request()
+        claims = get_jwt()
+        if claims.get("role") != "admin":
+            return jsonify({"error": "Acesso restrido a administradores."}), 403
+        return fn(*args, **kwargs)
+    return wrapper
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -166,6 +177,7 @@ def daily_status():
     }), 200
 
 @app.route('/reports/monthly', methods=['GET'])
+@admin_required
 def report_monthly():
     # 1. Ler e validar os parâmetros
     year = request.args.get('year')
@@ -214,6 +226,7 @@ def report_monthly():
 
 
 @app.route('/reports/yearly', methods=['GET'])
+@admin_required
 def report_yearly():
     # 1. Ler e validar o ano
     year = request.args.get('year')
@@ -253,6 +266,7 @@ def report_yearly():
     }), 200
 
 @app.route('/reports/daily', methods=['GET'])
+@admin_required
 def report_daily():
     # 1. Ler e validar a data
     requested_date = request.args.get('date')
