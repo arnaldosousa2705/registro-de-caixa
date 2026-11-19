@@ -62,7 +62,7 @@ def admin_required(fn):
         verify_jwt_in_request()
         claims = get_jwt()
         if claims.get("role") != "admin":
-            return jsonify({"error": "Acesso restrido a administradores."}), 403
+            return jsonify({"error": "Acesso restrito a administradores."}), 403
         return fn(*args, **kwargs)
     return wrapper
 
@@ -537,6 +537,21 @@ def create_admin(email, password):
     db.session.add(new_admin)
     db.session.commit()
     print(f"Administrador criado com sucesso: {email}")
+
+@app.cli.command("create-user")
+@click.argument("email")
+@click.argument("password")
+@click.option("--role", default="funcionario", type=click.Choice(["admin", "funcionario"]))
+def create_user(email, password, role):
+    if User.query.filter_by(email=email).first():
+        print(f"Usuário com email {email} já existe.")
+        return
+
+    hashed_password = generate_password_hash(password)
+    new_user = User(email=email, password_hash=hashed_password, role=role)
+    db.session.add(new_user)
+    db.session.commit()
+    print(f"Usuário criado: {email} ({role})")
 
 if __name__ == '__main__':
     app.run(debug=True)
