@@ -8,7 +8,7 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import click
 from functools import wraps
-from flask_jwt_extended import JWTManager, create_access_token, verify_jwt_in_request, get_jwt
+from flask_jwt_extended import JWTManager, create_access_token, verify_jwt_in_request, get_jwt, jwt_required
 
 app = Flask(__name__)
 CORS(app)
@@ -88,6 +88,7 @@ def login():
     return jsonify({"error": "Email ou senha inválidos."}), 401
 
 @app.route('/daily/open', methods=['POST'])
+@jwt_required()
 def open_daily():
     # 1. Verificar se já existe caixa aberto
     caixa_aberto = DailyRegister.query.filter_by(
@@ -124,6 +125,7 @@ def open_daily():
     }), 201
 
 @app.route('/daily/close', methods=['POST'])
+@jwt_required()
 def close_daily():
     # 1. Buscar caixa aberto
     caixa_aberto = DailyRegister.query.filter_by (
@@ -162,6 +164,7 @@ def close_daily():
     }), 200
 
 @app.route('/daily/status', methods=['GET'])
+@jwt_required()
 def daily_status():
     caixa_aberto = DailyRegister.query.filter_by(
         status='aberto',
@@ -307,6 +310,7 @@ def report_daily():
     }), 200
 
 @app.route('/sales', methods=['POST'])
+@jwt_required()
 def create_sale():
 
     data = request.get_json()
@@ -340,6 +344,7 @@ def create_sale():
     }), 201
 
 @app.route('/sales', methods=['GET'])
+@jwt_required()
 def get_sales():
     requested_date = request.args.get('date')
     requested_register_id = request.args.get('daily_register_id')
@@ -401,6 +406,7 @@ def get_sales():
     }), 200
 
 @app.route('/withdrawals', methods=['POST'])
+@jwt_required()
 def create_withdrawal():
 
     data = request.get_json()
@@ -433,6 +439,7 @@ def create_withdrawal():
     }), 201
 
 @app.route('/sales/<int:sale_id>', methods=['PUT'])
+@jwt_required()
 def update_sale(sale_id):
     venda = Sale.query.get(sale_id)
     if not venda:
@@ -465,6 +472,7 @@ def update_sale(sale_id):
     }), 200
 
 @app.route('/sales/<int:sale_id>', methods=['DELETE'])
+@jwt_required()
 def delete_sale(sale_id):
     venda = Sale.query.get(sale_id)
     if not venda:
@@ -479,6 +487,7 @@ def delete_sale(sale_id):
     return jsonify({"message": "Venda deletada com sucesso."}), 200
 
 @app.route('/withdrawals/<int:withdrawal_id>', methods=['PUT'])
+@jwt_required()
 def update_withdrawal(withdrawal_id):
     retirada = Withdrawal.query.get(withdrawal_id)
     if not retirada:
@@ -511,6 +520,7 @@ def update_withdrawal(withdrawal_id):
     }), 200
 
 @app.route('/withdrawals/<int:withdrawal_id>', methods=['DELETE'])
+@jwt_required()
 def delete_withdrawal(withdrawal_id):
     retirada = Withdrawal.query.get(withdrawal_id)
     if not retirada:
