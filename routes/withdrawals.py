@@ -41,7 +41,7 @@ def create_withdrawal():
 @withdrawals_bp.route('/withdrawals/<int:withdrawal_id>', methods=['PUT'])
 @jwt_required()
 def update_withdrawal(withdrawal_id):
-    retirada = Withdrawal.query.get(withdrawal_id)
+    retirada = db.session.get(Withdrawal, withdrawal_id)
     if not retirada:
         return jsonify({"error": "Retirada não encontrada."}), 404
 

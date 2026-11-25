@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv() # Carrega as variáveis do arquivo .env
 from flask import Flask, request, jsonify 
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash
@@ -16,6 +18,8 @@ from routes.daily import daily_bp
 from routes.sales import sales_bp
 from routes.withdrawals import withdrawals_bp
 from routes.reports import reports_bp
+
+
 
 app = Flask(__name__)
 CORS(app)

@@ -53,7 +53,7 @@ def get_sales():
         except (ValueError, TypeError):
             return jsonify({"error": "ID do caixa inválido."}), 400
 
-        caixa = DailyRegister.query.get(requested_register_id)
+        caixa = db.session.get(DailyRegister, requested_register_id)
         if not caixa:
             return jsonify({"error": "Caixa não encontrado."}), 404
 
